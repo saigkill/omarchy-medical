@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "id": "saigkill.meds",
+  "name": "Medication tracker",
+  "version": "1.0.2",
+  "author": "Sascha Manns",
+  "description": "Track medications, doses and stock with reminder popups",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Medication tracker",
+    "description": "Pill icon in the bar showing the next due dose, color-coded by due state and stock level. Opens a panel to manage medications, doses, intake log and stock.",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right"
+  }
+}
