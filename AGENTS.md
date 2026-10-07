@@ -39,6 +39,10 @@ Do not edit, reset or "clean up" that file, and do not log or mark doses in the
 running panel to test something. Test with a copy, or point `dataFile` at a
 scratch path temporarily and put it back.
 
+Health data must never appear in process arguments (world-readable via
+`/proc`): `saveData` pipes the JSON over stdin and notifications carry no
+medication details. The file and its directory stay private (`0600`/`0700`).
+
 The life chart plugin (`saigkill.lifechart`, `../omarchy-lifechart`) reads
 this file (read only) to suggest "medication taken" for a day and to list the
 current medications in its PDF report. It relies on

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "saigkill.meds",
   "name": "Medication tracker",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "author": "Sascha Manns",
   "description": "Track medications, doses and stock with reminder popups",
   "kinds": ["bar-widget"],

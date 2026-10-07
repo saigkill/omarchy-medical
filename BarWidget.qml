@@ -21,6 +21,7 @@ BarWidget {
   property date now: new Date()
   property var medications: []
   property var intakeLog: []
+  property var pendingSave: null
 
   // Reminder and stock warnings fire once per (slot|day) and per (med|day).
   // Both maps store the timestamp of the notification the shell actually
@@ -87,10 +88,25 @@ BarWidget {
 
   function saveData() {
     var data = Model.trimLog({ medications: root.medications, log: root.intakeLog }, 30)
-    var json = JSON.stringify(data)
+    // The JSON goes in over stdin: argv is world-readable through /proc, and
+    // this file holds health data. A save requested while one is running is
+    // parked and written when the current one exits, so the latest state wins.
+    root.pendingSave = JSON.stringify(data)
+    if (!saveProc.running) startSave()
+  }
+
+  function startSave() {
+    if (root.pendingSave === null) return
+    saveProc.payload = root.pendingSave
+    root.pendingSave = null
+    // Private dir and file, written through a temp file so a crash cannot
+    // leave a truncated data.json behind.
     saveProc.command = ["sh", "-c",
-      'mkdir -p "$(dirname "$2")" && printf %s "$1" > "$2"',
-      "sh", json, root.dataFile]
+      'umask 077 && d=$(dirname "$1") && mkdir -p "$d" && chmod 700 "$d" '
+      + '&& t=$(mktemp "$d/.data.XXXXXX") && cat > "$t" && mv -f "$t" "$1" '
+      + '|| { rm -f "$t"; exit 1; }',
+      "sh", root.dataFile]
+    saveProc.stdinEnabled = true
     saveProc.running = true
   }
 
@@ -181,12 +197,8 @@ BarWidget {
       root.now.getTime(), root.reminderRepeatMs)
     if (plan.entries.length === 0) return
 
-    var labels = []
     var keys = []
-    for (var i = 0; i < plan.entries.length; i++) {
-      labels.push(Model.slotLabel(plan.entries[i].slot))
-      keys.push(plan.entries[i].key)
-    }
+    for (var i = 0; i < plan.entries.length; i++) keys.push(plan.entries[i].key)
     var title = plan.entries.length === 1
       ? (plan.hasRepeat ? "Medication still due" : "Medication due")
       : plan.entries.length + (plan.hasRepeat ? " doses still due" : " doses due")
@@ -194,7 +206,7 @@ BarWidget {
       store: "reminder",
       keys: keys,
       title: title,
-      body: labels.join(",  "),
+      body: root.notifyBody,
       urgency: "critical",
       replaceId: batchId(keys)
     })
@@ -204,7 +216,6 @@ BarWidget {
   // low-stock warning is not lost either while the shell is starting.
   function fireStockWarnings() {
     var meds = root.medications
-    var labels = []
     var keys = []
     var anyEmpty = false
     var nowMs = root.now.getTime()
@@ -216,7 +227,6 @@ BarWidget {
       var last = root.stockNotifiedKeys[key]
       if (last !== undefined && last !== null && nowMs - last < root.reminderRepeatMs) continue
       keys.push(key)
-      labels.push(med.name + ": " + med.currentStock + " left, minimum " + med.minStock)
       if (status === "empty") anyEmpty = true
     }
     if (keys.length === 0) return
@@ -226,11 +236,16 @@ BarWidget {
       store: "stock",
       keys: keys,
       title: title,
-      body: labels.join(",  "),
+      body: root.notifyBody,
       urgency: "normal",
       replaceId: batchId(keys)
     })
   }
+
+  // Notification text is passed to omarchy-notification-send as argv, which any
+  // local user can read through /proc. It therefore carries no medication names,
+  // doses or stock numbers; those stay in the panel.
+  readonly property string notifyBody: "Open the medication panel for details"
 
   // One Process serves every notification. A send is only recorded as done
   // once the process exits successfully, because the shell owns
@@ -351,8 +366,14 @@ BarWidget {
 
   Process {
     id: saveProc
+    property string payload: ""
+    onStarted: {
+      write(payload)
+      stdinEnabled = false
+    }
     onExited: function(exitCode) {
       if (exitCode !== 0) console.warn("saigkill.meds: failed to save data file")
+      root.startSave()
     }
   }
 

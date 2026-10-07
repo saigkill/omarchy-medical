@@ -69,6 +69,11 @@ same engine `omarchy reminder` fires when a countdown elapses). The
 `omarchy reminder` CLI itself cannot fire at "now": it rejects `0` minutes
 and is a countdown primitive (`systemd-run --on-active`).
 
+Notification text is generic ("Medication due", "Open the medication panel for
+details"): it travels as a process argument, which other local users can read
+through `/proc`, so it never contains medication names, doses or stock numbers.
+`data.json` is written privately (directory `0700`, file `0600`).
+
 ## Remove
 
 ```sh
