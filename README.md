@@ -3,6 +3,8 @@
 Track medications, their daily intake times, and stock levels in the Omarchy
 Quattro bar.
 
+![Preview](https://github.com/saigkill/omarchy-medical/blob/master/preview.png?raw=true)
+
 ## Features
 
 - **Bar widget** — a pill icon whose color reflects the current state:
