@@ -71,7 +71,13 @@ BarWidget {
 
   // ---- persistence -------------------------------------------------
   function loadData() {
-    loadProc.command = ["sh", "-c", 'cat "$1" 2>/dev/null || true', "sh", root.dataFile]
+    // Repair first, read second: an install from before the private-permission
+    // fix would otherwise stay world-readable until the next save. Only the
+    // modes are touched, and a failed chmod must never block the read.
+    loadProc.command = ["sh", "-c",
+      'chmod 700 "$(dirname "$1")" 2>/dev/null; chmod 600 "$1" 2>/dev/null; '
+      + 'cat "$1" 2>/dev/null || true',
+      "sh", root.dataFile]
     loadProc.running = true
   }
 

@@ -41,7 +41,8 @@ scratch path temporarily and put it back.
 
 Health data must never appear in process arguments (world-readable via
 `/proc`): `saveData` pipes the JSON over stdin and notifications carry no
-medication details. The file and its directory stay private (`0600`/`0700`).
+medication details. The file and its directory stay private (`0600`/`0700`). `loadData` repairs the modes of an existing
+install before reading, so old data is not exposed until the next save.
 
 The life chart plugin (`saigkill.lifechart`, `../omarchy-lifechart`) reads
 this file (read only) to suggest "medication taken" for a day and to list the
