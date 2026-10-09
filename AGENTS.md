@@ -76,9 +76,15 @@ panel. Never move state into the plugin directory.
 - **Times are normalized** by `doseTimes()` (sorted, deduped, minutes) and
   stored as `"HH:mm"` strings. Malformed input is dropped, not rejected.
 - **`logIntake()` decrements stock by one.** Stock is clamped at 0 everywhere.
-- **Each bar runs its own widget instance.** With several monitors the same
-  reminder is sent once per bar; `batchId()` derives a stable replace id so
-  the toasts merge into one. Do not replace it with a random id.
+- **Each bar runs its own widget instance (one per monitor), with its own
+  in-memory copy of the state.** They only agree through the data file, so
+  `checkStatus()` re-reads the file before deciding, and `saveData()` reads the
+  file and merges (`Model.mergeData`) before writing. Without both, a dose
+  confirmed on one monitor keeps nagging from the others and a stale save can
+  erase the entry. `mergeData` unions the append-only log but takes medications
+  from the local copy (a deletion must stick). With several monitors the same
+  reminder is sent once per bar; `batchId()` derives a stable replace id so the
+  toasts merge into one. Do not replace it with a random id.
 
 ## Editing Model.js
 
@@ -123,6 +129,11 @@ EOF
   `concat` / `map` / `filter` and assign the result.
 - Every mutation in `BarWidget.qml` ends with `saveData()` and `refreshNow()`.
   Keep that pattern for new ones.
+- `saveData()` is a read-merge-write cycle (`saveReadProc` then `saveProc`),
+  not a blind write. `pendingPayload` is snapshotted synchronously and
+  `saveBusy` gates the cycle; do not make `saveData()` write the in-memory
+  state directly. `afterSync()` skips adopting the disk state while a save is
+  pending, so a reload cannot revert an unwritten mutation.
 - A QML `id` and a function or property of the same name on `root` collide;
   `root.<name>` resolves to the property/function, not the item. Give ids
   distinct names.

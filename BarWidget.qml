@@ -21,7 +21,12 @@ BarWidget {
   property date now: new Date()
   property var medications: []
   property var intakeLog: []
-  property var pendingSave: null
+
+  // The newest local state still waiting to be written, plus whether the
+  // read-merge-write save cycle is running. Snapshotted synchronously so a
+  // concurrent reload from disk cannot drop a mutation before it is saved.
+  property string pendingPayload: ""
+  property bool saveBusy: false
 
   // Reminder and stock warnings fire once per (slot|day) and per (med|day).
   // Both maps store the timestamp of the notification the shell actually
@@ -93,27 +98,24 @@ BarWidget {
   }
 
   function saveData() {
-    var data = Model.trimLog({ medications: root.medications, log: root.intakeLog }, 30)
-    // The JSON goes in over stdin: argv is world-readable through /proc, and
-    // this file holds health data. A save requested while one is running is
-    // parked and written when the current one exits, so the latest state wins.
-    root.pendingSave = JSON.stringify(data)
-    if (!saveProc.running) startSave()
+    // Snapshot synchronously: a reload from disk (another bar confirmed a
+    // dose) may land before this save completes, and must not drop the local
+    // mutation. A save requested while one is running replaces the snapshot,
+    // so the latest state wins and is written when the current cycle exits.
+    root.pendingPayload = JSON.stringify({ medications: root.medications, log: root.intakeLog })
+    if (!root.saveBusy) root.startSave()
   }
 
+  // Read the file that is on disk right now, merge it with the local snapshot,
+  // then write. The extra read is what keeps instances from clobbering each
+  // other: each save picks up whatever another bar wrote and unions the log.
   function startSave() {
-    if (root.pendingSave === null) return
-    saveProc.payload = root.pendingSave
-    root.pendingSave = null
-    // Private dir and file, written through a temp file so a crash cannot
-    // leave a truncated data.json behind.
-    saveProc.command = ["sh", "-c",
-      'umask 077 && d=$(dirname "$1") && mkdir -p "$d" && chmod 700 "$d" '
-      + '&& t=$(mktemp "$d/.data.XXXXXX") && cat > "$t" && mv -f "$t" "$1" '
-      + '|| { rm -f "$t"; exit 1; }',
-      "sh", root.dataFile]
-    saveProc.stdinEnabled = true
-    saveProc.running = true
+    if (root.pendingPayload === "") return
+    root.saveBusy = true
+    saveReadProc.snapshot = root.pendingPayload
+    root.pendingPayload = ""
+    saveReadProc.command = ["sh", "-c", 'cat "$1" 2>/dev/null || true', "sh", root.dataFile]
+    saveReadProc.running = true
   }
 
   // ---- mutation API for the panel ------------------------------------
@@ -188,6 +190,20 @@ BarWidget {
 
   function checkStatus() {
     root.refreshNow()
+    // Re-read the file before deciding anything: another bar instance may have
+    // confirmed a dose, and this instance must not keep nagging about it. The
+    // read is async, so the checks run from afterSync() once it lands.
+    if (syncProc.running) return
+    syncProc.command = ["sh", "-c", 'cat "$1" 2>/dev/null || true', "sh", root.dataFile]
+    syncProc.running = true
+  }
+
+  function afterSync(text) {
+    // Only adopt the on-disk state when no local mutation is still unwritten,
+    // or an in-flight save would be reverted in memory. A blank read (file
+    // briefly missing) must not wipe the current state either.
+    if (!root.saveBusy && root.pendingPayload === "" && String(text || "").trim() !== "")
+      root.applyData(text)
     fireDueReminders()
     fireStockWarnings()
   }
@@ -370,6 +386,35 @@ BarWidget {
     }
   }
 
+  // First half of a save: snapshot the file another instance may have written.
+  // The JSON payload itself goes in over stdin later (argv is world-readable
+  // through /proc, and this file holds health data).
+  Process {
+    id: saveReadProc
+    property string snapshot: ""
+    stdout: StdioCollector {
+      id: saveReadOut
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      var disk = null
+      try { disk = JSON.parse(String(saveReadOut.text || "")) } catch (error) { disk = null }
+      var local = null
+      try { local = JSON.parse(saveReadProc.snapshot) } catch (error) { local = null }
+      saveReadProc.snapshot = ""
+      saveProc.payload = JSON.stringify(Model.mergeData(disk, local, 30))
+      // Private dir and file, written through a temp file so a crash cannot
+      // leave a truncated data.json behind.
+      saveProc.command = ["sh", "-c",
+        'umask 077 && d=$(dirname "$1") && mkdir -p "$d" && chmod 700 "$d" '
+        + '&& t=$(mktemp "$d/.data.XXXXXX") && cat > "$t" && mv -f "$t" "$1" '
+        + '|| { rm -f "$t"; exit 1; }',
+        "sh", root.dataFile]
+      saveProc.stdinEnabled = true
+      saveProc.running = true
+    }
+  }
+
   Process {
     id: saveProc
     property string payload: ""
@@ -379,7 +424,20 @@ BarWidget {
     }
     onExited: function(exitCode) {
       if (exitCode !== 0) console.warn("saigkill.meds: failed to save data file")
-      root.startSave()
+      root.saveBusy = false
+      if (root.pendingPayload !== "") root.startSave()
+    }
+  }
+
+  // Periodic reload so this instance adopts doses confirmed on another bar.
+  Process {
+    id: syncProc
+    stdout: StdioCollector {
+      id: syncOut
+      waitForEnd: true
+    }
+    onExited: function(exitCode) {
+      root.afterSync(syncOut.text)
     }
   }
 

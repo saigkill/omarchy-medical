@@ -332,6 +332,43 @@ function trimLog(data, days) {
   }
 }
 
+// Union two logs by (medication + timestamp). The log only ever grows, so two
+// bar instances that each confirmed a dose must not erase each other's entries
+// when they save; an entry present on both sides collapses to one.
+function mergeLog(a, b) {
+  var out = []
+  var seen = {}
+  var lists = [a, b]
+  for (var l = 0; l < lists.length; l++) {
+    var list = lists[l] || []
+    for (var i = 0; i < list.length; i++) {
+      var entry = list[i]
+      if (!entry || typeof entry !== "object") continue
+      var key = String(entry.medicationId) + "@" + String(entry.timestamp)
+      if (key in seen) continue
+      seen[key] = true
+      out.push(entry)
+    }
+  }
+  return out
+}
+
+// Combine the file currently on disk with the local (newer) state before
+// writing. Every bar runs its own widget instance and saves the whole state,
+// so a blind write would drop dose entries another instance appended. The log
+// is therefore unioned (see mergeLog); medications are taken from `local`,
+// because a deletion has to stick and there is no tombstone to distinguish a
+// stale copy from a removed one. Both sides are normalized via decode() and the
+// result is trimmed like a normal save.
+function mergeData(disk, local, days) {
+  var onDisk = decode(disk)
+  var mine = decode(local)
+  return trimLog({
+    medications: mine.medications,
+    log: mergeLog(onDisk.log, mine.log)
+  }, days)
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     newId: newId,
@@ -357,6 +394,8 @@ if (typeof module !== "undefined") {
     statusView: statusView,
     emptyData: emptyData,
     decode: decode,
-    trimLog: trimLog
+    trimLog: trimLog,
+    mergeLog: mergeLog,
+    mergeData: mergeData
   }
 }
