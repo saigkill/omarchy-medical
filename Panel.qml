@@ -231,28 +231,28 @@ Panel {
               anchors.verticalCenter: parent.verticalCenter
               spacing: Style.space(8)
 
-              TextField {
+              SafeField {
                 width: parent.width
                 foreground: root.contentForeground
                 text: root.editName
                 placeholderText: root.isNew ? "Name (required)" : "Name"
-                onTextChanged: root.editName = text
+                onEdited: function(value) { root.editName = value }
               }
 
-              TextField {
+              SafeField {
                 width: parent.width
                 foreground: root.contentForeground
                 text: root.editDosage
                 placeholderText: "Dosage, e.g. 400mg"
-                onTextChanged: root.editDosage = text
+                onEdited: function(value) { root.editDosage = value }
               }
 
-              TextField {
+              SafeField {
                 width: parent.width
                 foreground: root.contentForeground
                 text: root.editTimes
                 placeholderText: "Times, e.g. 08:00, 20:00"
-                onTextChanged: root.editTimes = text
+                onEdited: function(value) { root.editTimes = value }
               }
 
               Row {
