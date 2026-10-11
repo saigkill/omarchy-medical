@@ -258,7 +258,7 @@ Panel {
               Row {
                 spacing: Style.space(12)
 
-                NumberField {
+                SafeNumber {
                   label: "Stock"
                   fieldWidth: Style.space(90)
                   foreground: root.contentForeground
@@ -269,7 +269,7 @@ Panel {
                   onModified: function(amount) { root.editCurrentStock = amount }
                 }
 
-                NumberField {
+                SafeNumber {
                   label: "Min stock"
                   fieldWidth: Style.space(90)
                   foreground: root.contentForeground
